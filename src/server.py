@@ -29,15 +29,15 @@ class Server :
                 
     def handle_client(self, client):
         with client:
-            writer = client.makeFile('w')
-            reader = client.makeFile('r')
+            writer = client.makefile('w')
+            reader = client.makefile('r')
             handle = None
             try:
                 writer.write("Connection to the File Exchange System is successful!")
                 writer.flush()
                 
                 while True:
-                    client_input = reader.readLine().strip()
+                    client_input = reader.readline().strip()
                     if not client_input:
                         break
                     
