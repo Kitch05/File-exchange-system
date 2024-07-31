@@ -155,7 +155,7 @@ class Server :
         
         try: 
             with open(path, 'rb') as file:
-                client.send_file(f)
+                client.send_file(file)
             print(f"File {filename} sent to {self.clients[handle]}")
         except Exception as e:
             writer.write(f"Error sending file: {e}\n")
