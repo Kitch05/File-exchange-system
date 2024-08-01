@@ -51,6 +51,7 @@ class Server:
                     else:
                         if instruc == "/join":
                             writer.write("Already joined the server!\n")
+                            writer.flush()
                         elif instruc == "/leave":
                             self.disconnect(writer, handle)
                             break
@@ -61,7 +62,7 @@ class Server:
                         elif instruc == "/store":
                             writer.write("OK\n")
                             writer.flush()
-                            self.handle_store(commands, writer, reader, handle)
+                            self.handle_store(commands, writer, client, handle)
                         elif instruc == "/dir":
                             writer.write("OK\n")
                             writer.flush()
@@ -122,7 +123,7 @@ class Server:
             writer.write("Error: Disconnection failed. Please connect to the server first.\n")
         writer.flush()
 
-    def handle_store(self, commands, writer, reader, handle):
+    def handle_store(self, commands, writer, client, handle):
         if len(commands) < 2:
             writer.write("Error: Filename missing\n")
             writer.flush()
@@ -130,32 +131,24 @@ class Server:
 
         filename = commands[1]
         path = os.path.join(self.dir_path, filename)
-        try:
-            file_length_str = reader.readline().strip()
-            if not file_length_str.isdigit():
-                writer.write("Error: Invalid File Length\n")
-                writer.flush()
-                return
-            file_length = int(file_length_str)
-        except ValueError:
-            writer.write("Error: Invalid File Length\n")
-            writer.flush()
-            return
-
+        
         try:
             with open(path, 'wb') as file:
-                total_read = 0
-                while total_read < file_length:
-                    data = reader.read(4096)
-                    if not data:
+                print(f"[{datetime.now()}] Storing file {filename} from {handle}")
+                while True:
+                    data = client.recv(4096)
+                    if not data or data.endswith(b"<EOF>"):  # Detect end of file marker
+                        if data.endswith(b"<EOF>"):
+                            data = data[:-5]  # Remove EOF marker
+                        file.write(data)
                         break
                     file.write(data)
-                    total_read += len(data)
-            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            upload_message = f"{handle}<{timestamp}>: Uploaded {filename}\n"
-            print(upload_message)
-            writer.write(upload_message)
-            writer.flush()
+                file.flush()
+                timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                upload_message = f"{handle}<{timestamp}>: Uploaded {filename}\n"
+                print(upload_message)
+                writer.write(upload_message)
+                writer.flush()
         except Exception as e:
             writer.write(f"Error storing file: {e}\n")
             writer.flush()
@@ -185,7 +178,8 @@ class Server:
             with open(path, 'rb') as file:
                 while chunk := file.read(4096):
                     client.sendall(chunk)
-            print(f"File {filename} sent to {self.clients[handle]}")
+                client.sendall(b"<EOF>")  # Send EOF marker
+            print(f"File {filename} sent to {handle}")
         except Exception as e:
             writer.write(f"Error sending file: {e}\n")
             writer.flush()
