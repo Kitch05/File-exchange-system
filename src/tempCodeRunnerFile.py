@@ -1,37 +1,39 @@
 import threading
 import time
 import socket
-import os
 from datetime import datetime
+import os
 
-class Server:
+class Server :
     def __init__(self):
         self.host = '127.0.0.1'
-        self.port = 12345
+        self.port = self.port = 5000  # Change the port number to an alternative port
         self.clients = {}
         self.dir_path = "Server Files"
         self.create_dir()
         self.start()
             
+    # Start the server
     def start(self):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
+            # Bind the IP address and port to the server
+            # Make the server start listening up
             server.bind((self.host, self.port))
             server.listen(5)
-            print("Starting server on port:", self.port)
+            print("Starting the server on port: %s" %(self.port))
             
             while True:
                 client, addr = server.accept()
-                print(f"[{datetime.now()}] {addr} has connected to the server")
                 thread = threading.Thread(target=self.handle_client, args=(client, addr))
                 thread.start()
                 
-    def handle_client(self, client, addr):
+    def handle_client(self, client):
         with client:
             writer = client.makefile('w')
             reader = client.makefile('r')
             handle = None
             try:
-                writer.write("Connection to the File Exchange Server is successful!\n")
+                writer.write("Connection to the File Exchange System is successful!")
                 writer.flush()
                 
                 while True:
@@ -39,18 +41,18 @@ class Server:
                     if not client_input:
                         break
                     
-                    print(f"[{datetime.now()}] Received command from {addr}: {client_input}")
                     commands = client_input.split(" ")
                     instruc = commands[0]
                     
                     if not handle and (instruc != '/register'):
-                        writer.write("Error: Registration required. Please register first.\n")
-                        writer.flush()
-                    elif instruc == '/register' and not handle:
-                        handle = self.register(commands, writer)
+                        writer.write("Register a handle/alias first!\n")
+                    elif instruc == '/register' and handle:
+                        client_handle = self.register(commands, writer)
                     else:
+                        # Client attempting to join again
                         if instruc == "/join":
                             writer.write("Already joined the server!\n")
+                        # Client wants to disconnect
                         elif instruc == "/leave":
                             self.disconnect(writer, handle)
                             break
@@ -69,77 +71,53 @@ class Server:
                         elif instruc == "/?":
                             self.ask_help(writer)
                         else:
-                            writer.write("Error: Command not found.\n")
-                            writer.flush()
-            except Exception as e:
-                writer.write(f"Error: {e}\n")
-                writer.flush()
+                            writer.write("Error: Unknown command.\n")
             finally:
                 if handle:
                     self.clients.pop(handle.lower(), None)
-                    print(f"[{datetime.now()}] {handle} has disconnected")
                 client.close()
                 
-    def register(self, commands, writer):
+    def register(self ,commands, writer):
         if len(commands) == 2:
             handle = commands[1]
             if handle.lower() not in self.clients:
-                self.clients[handle.lower()] = writer
-                welcome_message = f"Welcome {handle}!\n"
-                writer.write(welcome_message)
-                writer.flush()
-                print(f"[{datetime.now()}] Handle registered: {handle}")
+                self.clients[(handle.lower())] = writer
+                writer.write("Handle registered: %s\n" %(handle))
+                print("Handle registered: %s\n" %(handle))
                 return handle
             else:
-                writer.write("Error: Registration failed. Handle or alias already exists.\n")
-                writer.flush()
+                writer.write("Error: Handle already in use.\n")
         else:
-            writer.write("Error: Invalid command syntax for /register.\n")
-            writer.flush()
+            writer.write("Error: Invalid command for syntax /register.\n")
         return None
     
     def create_dir(self):
         if not os.path.exists(self.dir_path):
             os.makedirs(self.dir_path)
-            print(f"Directory successfully created: {self.dir_path}")
+            print("Directory successfully created: %s" %(self.dir_path))
             
     def dir_files(self, writer):
         files = os.listdir(self.dir_path)
-        if files:
-            file_list = "\n".join(files)
-        else:
-            file_list = "No files available."
-        writer.write(f"<SOM>\nServer Directory\n{file_list}\n<EOM>\n")
-        writer.flush()
-        print(f"[{datetime.now()}] Sent directory list to client")
-
+        file_list = "\n".join(files)
+        writer.write(f"<SOM>\n{file_list}\n<EOM>\n")
+            
     def disconnect(self, writer, handle):
         if handle:
             self.clients.pop(handle.lower(), None)
-            writer.write("Connection closed. Thank you!\n")
-            print(f"[{datetime.now()}] {handle} has disconnected")
-        else:
-            writer.write("Error: Disconnection failed. Please connect to the server first.\n")
+        writer.write("Disconnected from the server.\n")
         writer.flush()
-
+        
     def handle_store(self, commands, writer, reader, handle):
         if len(commands) < 2:
             writer.write("Error: Filename missing\n")
-            writer.flush()
             return
 
         filename = commands[1]
-        path = os.path.join(self.dir_path, filename)
+        path = os.path.join(self.directory_path, filename)
         try:
-            file_length_str = reader.readline().strip()
-            if not file_length_str.isdigit():
-                writer.write("Error: Invalid File Length\n")
-                writer.flush()
-                return
-            file_length = int(file_length_str)
+            file_length = int(reader.readline().strip())
         except ValueError:
             writer.write("Error: Invalid File Length\n")
-            writer.flush()
             return
 
         try:
@@ -149,49 +127,42 @@ class Server:
                     data = reader.read(4096)
                     if not data:
                         break
-                    file.write(data)
+                    file.write(data.encode())
                     total_read += len(data)
-            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            upload_message = f"{handle}<{timestamp}>: Uploaded {filename}\n"
-            print(upload_message)
-            writer.write(upload_message)
-            writer.flush()
+            print(f"Received {filename} From {handle}")
+            writer.write(f"File {filename} received successfully.\n")
         except Exception as e:
             writer.write(f"Error storing file: {e}\n")
-            writer.flush()
- 
-    def get_file(self, commands, writer, client, handle):
+        
+    def get_file(self, commands, client, writer, handle):
         if len(commands) < 2:
             writer.write("Error: Enter a filename.\n")
-            writer.flush()
             return
-
+        
         filename = commands[1]
         path = os.path.join(self.dir_path, filename)
-
+        
         if not os.path.isfile(path):
-            writer.write("Error: File not found in the server.\n")
-            writer.flush()
+            writer.write("Error: File does not exist.\n")
             return
-
-        file_size = os.path.getsize(path)
-        writer.write(f"{file_size}\n")
+        
+        file_size = os.path.isfile(path)
+        writer.write("File size: %s\n" %file_size)
         writer.flush()
-
+        
         # Delay the sending of file
-        time.sleep(1)
-
-        try:
+        time.sleep(3)
+        
+        try: 
             with open(path, 'rb') as file:
-                while chunk := file.read(4096):
-                    client.sendall(chunk)
+                client.send_file(file)
             print(f"File {filename} sent to {self.clients[handle]}")
         except Exception as e:
             writer.write(f"Error sending file: {e}\n")
-            writer.flush()
-
+            
+    
     def ask_help(self, writer):
-        help_message = (
+        response = (
             "<SOM>Available commands: \n"
             "/join <server_ip> <port> - Connect to the server\n"
             "/leave - Disconnect from the server\n"
@@ -201,9 +172,8 @@ class Server:
             "/get <filename> - Fetch file from server\n"
             "/? - Show this help message<EOM>\n"
         )
-        writer.write(help_message)
-        writer.flush()
-
+        writer.write(response)
+    
 # If this file is running, make it main and start the server.        
 if __name__ == "__main__":
     server = Server()
